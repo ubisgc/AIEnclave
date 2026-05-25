@@ -39,4 +39,7 @@ RUN mkdir -p /denied-bins && \
         chmod +x /denied-bins/$tool; \
     done
 
+# World-writable home for the arbitrary UID DWO assigns at runtime (no /etc/passwd entry).
+RUN mkdir -p /home/user && chmod 777 /home/user
+
 WORKDIR /home/user

@@ -27,6 +27,10 @@ spec:
             # Hardcoded because K8s env values do not expand $(PATH).
             - name: PATH
               value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            # DWO runs containers as an arbitrary UID with no /etc/passwd entry.
+            # HOME must point to a world-writable dir so copilot can write its cache.
+            - name: HOME
+              value: /home/user
           command:
             - tail
             - "-f"
