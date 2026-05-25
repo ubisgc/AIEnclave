@@ -2,14 +2,19 @@
 # Built from FQDNs observed during Phase 1 (CoreDNS query log on personal GitHub account).
 # Calico CE does not support FQDN matching; CIDRs used instead.
 #
-# Observed FQDNs (personal Copilot Free account):
+# Observed FQDNs (personal Copilot Free account + git clone + npm):
 #   github.com                           → 140.82.121.3
 #   api.github.com                       → 140.82.121.5
 #   api.individual.githubcopilot.com     → 140.82.112.21
 #   telemetry.individual.githubcopilot.com → 140.82.114.22
+#   raw.githubusercontent.com            → 185.199.108-111.133 (GitHub CDN/Fastly)
+#   registry.npmjs.org                   → 104.16.0-11.34 (Cloudflare)
 #
-# All resolve to 140.82.112.0/20 (GitHub published range).
-# Re-resolve before R6; enterprise tenant may add Azure CDN endpoints.
+# CIDRs: 140.82.112.0/20 (GitHub), 185.199.108.0/22 (GitHub CDN), 104.16.0.0/20 (npm/Cloudflare).
+# NOTE: 104.16.0.0/20 is a wide Cloudflare range shared with many services. On the real
+# OpenShift cluster (R8), npm traffic routes through the org proxy instead — proxy provides
+# package-level filtering. This CIDR is only needed for direct-internet Kind dev loops.
+# Re-resolve before R6; enterprise tenant may add Azure CDN/AAD endpoints.
 # Captured: 2026-05-25
 #
 # On the real OpenShift cluster, RHACS (Advanced Cluster Security) generates and enforces
@@ -32,10 +37,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Rule 2: HTTPS to GitHub IP range — covers all observed Copilot endpoints.
+    # Rule 2: HTTPS to GitHub + npm registry IP ranges.
     - to:
         - ipBlock:
-            cidr: 140.82.112.0/20
+            cidr: 140.82.112.0/20   # github.com, api.github.com, copilot API + telemetry
+        - ipBlock:
+            cidr: 185.199.108.0/22  # raw.githubusercontent.com (GitHub CDN/Fastly)
+        - ipBlock:
+            cidr: 104.16.0.0/20     # registry.npmjs.org (Cloudflare; replaced by org proxy in R8)
       ports:
         - protocol: TCP
           port: 443

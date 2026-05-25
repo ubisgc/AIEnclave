@@ -15,7 +15,7 @@
 | **R5** | NetworkPolicy egress — progressively tighten while Copilot runs | Which endpoints actually needed? | TODO |
 | **R6** | Port devfile to OpenShift tooling cluster | Devfile portable without changes? | TODO |
 | **R7** | RHACS integration on OpenShift tooling cluster | Does RHACS replace manual egress capture? Network flow audit live? Policy auto-generated? | TODO |
-| **R8** | Corporate proxy support | Do Copilot CLI, git, npm, and node work through org proxy? NetworkPolicy targets proxy IP, not GitHub directly. | TODO |
+| **R8** | Corporate proxy support | Do Copilot CLI, git, npm, and node work through org proxy? NetworkPolicy targets proxy IP not GitHub/npm directly. Internal npm mirror (Nexus/Artifactory) an alternative for package control. | TODO |
 
 ---
 
