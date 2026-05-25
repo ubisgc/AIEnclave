@@ -5,6 +5,9 @@ networking:
   podSubnet: "192.168.0.0/16"
 nodes:
   - role: control-plane
+    extraPortMappings:               # R2 — host 80/443 -> node 80/443 -> ingress-nginx hostPort
+      - { containerPort: 80,  hostPort: 8080, protocol: TCP }
+      - { containerPort: 443, hostPort: 8443, protocol: TCP }
     kubeadmConfigPatches:
       - |
         kind: ClusterConfiguration

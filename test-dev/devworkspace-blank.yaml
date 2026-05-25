@@ -1,0 +1,35 @@
+# R2 blank Workspace (ADR 0006): single tooling container that just stays alive.
+# Modelled on DWO samples/plain.yaml with routingClass: basic — exec-able, no web IDE.
+# The aienclave/egress: restricted label (ADR 0002) is attached to the workspace pod
+# via the template-level pod-overrides attribute so Calico can select it. R2 does NOT
+# apply the egress policy (that is R5); the label is a hook, not yet an enforced boundary.
+#
+# Image: quay.io/wto/web-terminal-tooling:1.2 — pinned named tag (== current :latest by
+# digest, ~209MB). Named pin per TEAM.md §7 rather than floating :latest.
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: aienclave-blank
+  namespace: aienclave-testuser
+spec:
+  started: true
+  routingClass: basic
+  template:
+    # Template-level free-form attributes (CRD storage version declares this as a
+    # preserve-unknown map). DWO's pod-overrides merges into the workspace pod spec;
+    # here it adds the ADR 0002 confinement label to the pod metadata.
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            aienclave/egress: restricted
+    components:
+      - name: tooling
+        container:
+          image: quay.io/wto/web-terminal-tooling:1.2
+          memoryRequest: 256Mi
+          memoryLimit: 512Mi
+          command:
+            - tail
+            - "-f"
+            - /dev/null
