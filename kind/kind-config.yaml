@@ -3,6 +3,17 @@ apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   disableDefaultCNI: true
   podSubnet: "192.168.0.0/16"
+# R3: tell containerd to resolve kind-registry:5000 over plain HTTP.
+# The registry container is connected to the "kind" Docker network so
+# Kind nodes can reach it by name. DWO sets imagePullPolicy:Always so
+# images must be in a registry reachable from the cluster — local file
+# load via `kind load` is not enough.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors]
+        [plugins."io.containerd.grpc.v1.cri".registry.mirrors."kind-registry:5000"]
+          endpoint = ["http://kind-registry:5000"]
 nodes:
   - role: control-plane
     extraPortMappings:               # R2 — host 80/443 -> node 80/443 -> ingress-nginx hostPort

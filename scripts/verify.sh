@@ -80,14 +80,15 @@ else
   echo "SKIP: no pod available"
 fi
 
-# --- Assertion 4: which kubectl resolves to wrapper ------------------------------
+# --- Assertion 4: command -v kubectl resolves to wrapper -------------------------
+# `which` is not installed on UBI9-minimal; use `command -v` (shell builtin) via sh -c.
 if [ -n "$POD" ]; then
-  echo "Assertion 4: which kubectl resolves to /denied-bins/kubectl..."
-  which_output=$($KUBECTL exec -n "$NS" "$POD" -- which kubectl 2>/dev/null || true)
-  if [ "$which_output" = "/denied-bins/kubectl" ]; then
-    echo "PASS: which kubectl -> ${which_output}"
+  echo "Assertion 4: command -v kubectl resolves to /denied-bins/kubectl..."
+  cv_output=$($KUBECTL exec -n "$NS" "$POD" -- sh -c 'command -v kubectl' 2>/dev/null || true)
+  if [ "$cv_output" = "/denied-bins/kubectl" ]; then
+    echo "PASS: command -v kubectl -> ${cv_output}"
   else
-    echo "FAIL: which kubectl -> '${which_output}' (expected /denied-bins/kubectl)"
+    echo "FAIL: command -v kubectl -> '${cv_output}' (expected /denied-bins/kubectl)"
     rc=1
   fi
 else
