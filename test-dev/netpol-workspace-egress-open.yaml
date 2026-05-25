@@ -1,0 +1,17 @@
+# R5 Phase 1 — open egress (observe).
+# Applied during traffic capture to let Copilot reach anything. CoreDNS query log
+# records all FQDNs; this policy is replaced by netpol-workspace-egress-enforce.yaml
+# once the allowlist is built.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: workspace-egress
+  namespace: aienclave-testuser
+spec:
+  podSelector:
+    matchLabels:
+      aienclave/egress: restricted
+  policyTypes:
+    - Egress
+  egress:
+    - {} # allow all egress

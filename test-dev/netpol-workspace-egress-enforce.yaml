@@ -1,0 +1,47 @@
+# R5 Phase 2 — enforced egress allowlist.
+# Built from FQDNs observed during Phase 1 (CoreDNS query log).
+# Calico CE does not support FQDN matching in standard NetworkPolicy; CIDRs are used.
+# GitHub published IP ranges: https://api.github.com/meta (fields: api, web, git)
+# Resolved at time of R5 capture — re-resolve before R6 if significant time has passed.
+#
+# On the real OpenShift cluster, RHACS (Advanced Cluster Security) generates and enforces
+# this policy from live network flow data — no manual CIDR maintenance required.
+#
+# Egress rules:
+#   1. DNS  — UDP/TCP 53 to kube-dns (in-cluster)
+#   2. HTTPS — TCP 443 to GitHub API / web / git CIDRs
+#   3. HTTPS — TCP 443 to copilot.github.com (may share GitHub CIDRs — verify from capture)
+#   Default: deny all other egress
+#
+# NOTE: CIDRs below are PLACEHOLDERS populated by scripts/build-egress-policy.sh after
+# Phase 1 capture. Do not apply this file before running the capture script.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: workspace-egress
+  namespace: aienclave-testuser
+spec:
+  podSelector:
+    matchLabels:
+      aienclave/egress: restricted
+  policyTypes:
+    - Egress
+  egress:
+    # Rule 1: DNS to kube-dns (CoreDNS)
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Rule 2: HTTPS to GitHub CIDRs (populated by build-egress-policy.sh)
+    # PLACEHOLDER — replace with output of: dig +short <fqdn> | sort -u
+    - to:
+        - ipBlock:
+            cidr: 140.82.112.0/20   # github.com (observed range — verify)
+        - ipBlock:
+            cidr: 185.199.108.0/22  # githubusercontent.com CDN
+        - ipBlock:
+            cidr: 192.30.252.0/22   # github.com API (older range — verify)
+      ports:
+        - protocol: TCP
+          port: 443

@@ -1,7 +1,7 @@
 CLUSTER    := aienclave
 KUBECTL    := kubectl --context kind-$(CLUSTER)
 IMAGE_NAME := aienclave-workspace
-IMAGE_TAG  := r4
+IMAGE_TAG  := r5
 REGISTRY   := kind-registry
 # REG_PORT: host-side port for the local registry; cluster-side is always 5000.
 REG_PORT   := 5001
@@ -65,9 +65,11 @@ up:
 		-n $(DWO_NS) --for=condition=Ready --timeout=60s
 	# 5. Operator config — sets the workspace URL host suffix (ADR 0003).
 	$(KUBECTL) apply -f test-dev/devworkspaceoperatorconfig.yaml
-	# 6. R4 workspace — adds persistent PVC for home dir; same hardened image as R3.
+	# 6. R5 workspace — egress observation and enforcement. Phase 1: open egress.
+	#    Run scripts/capture-traffic.sh start, then make verify for full flow.
 	$(KUBECTL) create namespace aienclave-testuser --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) apply -f test-dev/devworkspace-r4.yaml
+	$(KUBECTL) apply -f test-dev/netpol-workspace-egress-open.yaml
+	$(KUBECTL) apply -f test-dev/devworkspace-r5.yaml
 
 down:
 	kind delete cluster --name $(CLUSTER)
