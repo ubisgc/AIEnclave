@@ -28,7 +28,7 @@ spec:
               path: /home/user
           env:
             - name: PATH
-              value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              value: /denied-bins:/opt/skills/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             - name: HOME
               value: /home/user
           command:
