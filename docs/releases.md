@@ -14,6 +14,7 @@
 | **R4** | Copilot CLI auth inside workspace | Token lands where? Plaintext on PVC confirmed? | TODO |
 | **R5** | NetworkPolicy egress — progressively tighten while Copilot runs | Which endpoints actually needed? | TODO |
 | **R6** | Port devfile to OpenShift tooling cluster | Devfile portable without changes? | TODO |
+| **R7** | RHACS integration on OpenShift tooling cluster | Does RHACS replace manual egress capture? Network flow audit live? Policy auto-generated? | TODO |
 
 ---
 
@@ -31,6 +32,8 @@
 
 **R6:** Copy devfile from Kind setup to OpenShift tooling cluster DevSpaces. Workspace starts without modification.
 
+**R7:** OpenShift Advanced Cluster Security (RHACS) is already running on the tooling cluster. Validate that RHACS network flow monitoring captures Copilot egress per-pod in real time, replacing the manual CoreDNS capture from R5. Validate RHACS network policy generation produces an equivalent allowlist. Validate RHACS admission control can stop a workspace pod that violates egress policy. Confirm runtime security rules can alert on unexpected tool execution inside the workspace.
+
 ---
 
 ## Open Questions (answered per release, not upfront)
@@ -39,6 +42,7 @@
 - R3 closes: Does agent mode respect PATH wrappers, or does it exec directly?
 - R4 closes: OAuth token storage on headless Linux — plaintext risk confirmed/quantified
 - R5 closes: Exact egress allowlist for Copilot CLI + Enterprise tenant
+- R7 closes: RHACS replaces manual R5 capture; live audit log confirmed; admission control enforces policy automatically
 
 ## Background
 
