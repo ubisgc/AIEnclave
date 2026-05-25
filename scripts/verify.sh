@@ -1,88 +1,69 @@
 #!/usr/bin/env bash
-# R1 verification: prove the RFC1918 egress block works on Kind + Calico.
+# R2 verification: prove the DevWorkspace lifecycle works on Kind + Calico + DWO.
 #
-# Deploys two otherwise-identical pods differing only by the
-# aienclave/egress: restricted label. The labeled pod must NOT reach a
-# literal 10.x address (Calico drops it); the unlabeled pod MUST reach a
-# public control IP. Literal IPs only — never a Service IP (ipBlock vs
-# DNAT'd Service IPs is undefined; see ADR 0002).
+# Two done-criteria, nothing about browser/IDE (ADR 0003/0006 — R2 is lifecycle-only):
+#   1. Lifecycle: the blank DevWorkspace reaches phase == Running.
+#   2. Exec:      kubectl exec into the workspace pod runs `echo` with exit 0.
+#
+# DWO's own docs warn workspace image pulls can exceed 5 min; assertion 1 uses a
+# generous 10-minute timeout and FAILs on timeout.
 set -uo pipefail
 
 KUBECTL="kubectl --context kind-aienclave"
-NS=default
-BLOCKED_IP=10.99.99.99   # literal RFC1918 stand-in for the internal network
-CONTROL_IP=1.1.1.1       # public control IP — must stay reachable
-
-cleanup() {
-  $KUBECTL delete pod test-pod-blocked test-pod-allowed -n "$NS" \
-    --ignore-not-found --wait=false >/dev/null 2>&1
-}
-trap cleanup EXIT
-
-echo "Deploying test pods..."
-
-$KUBECTL apply -f - <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod-blocked
-  namespace: default
-  labels:
-    aienclave/egress: restricted
-spec:
-  hostNetwork: false
-  containers:
-    - name: curl
-      image: curlimages/curl:latest
-      command: ["sleep", "3600"]
-EOF
-
-$KUBECTL apply -f - <<'EOF'
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-pod-allowed
-  namespace: default
-spec:
-  hostNetwork: false
-  containers:
-    - name: curl
-      image: curlimages/curl:latest
-      command: ["sleep", "3600"]
-EOF
-
-echo "Waiting for pods Ready..."
-$KUBECTL wait --for=condition=Ready pod/test-pod-blocked pod/test-pod-allowed \
-  -n "$NS" --timeout=120s || {
-    echo "FAIL: pods did not become Ready"
-    exit 1
-  }
+NS=aienclave-testuser
+DW_NAME=aienclave-blank
+DW_LABEL="controller.devfile.io/devworkspace_name=${DW_NAME}"
+RUNNING_TIMEOUT=600   # seconds — 10 min; DWO warns image pulls can be slow
+POLL_INTERVAL=10
 
 rc=0
 
-# Assertion 1: labeled pod must NOT reach the 10.x address (curl exits non-zero).
-echo "Assertion 1: test-pod-blocked -> http://${BLOCKED_IP} (expect blocked)..."
-if $KUBECTL exec -n "$NS" test-pod-blocked -- \
-    curl --max-time 5 "http://${BLOCKED_IP}" >/dev/null 2>&1; then
-  echo "FAIL: blocked pod reached ${BLOCKED_IP} (egress block not enforced)"
-  rc=1
+# --- Assertion 1: DevWorkspace reaches Running -----------------------------------
+echo "Assertion 1: DevWorkspace ${DW_NAME} -> phase Running (timeout ${RUNNING_TIMEOUT}s)..."
+deadline=$(( $(date +%s) + RUNNING_TIMEOUT ))
+phase=""
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  phase=$($KUBECTL get devworkspace "$DW_NAME" -n "$NS" \
+            -o jsonpath='{.status.phase}' 2>/dev/null)
+  if [ "$phase" = "Running" ]; then
+    break
+  fi
+  if [ "$phase" = "Failed" ]; then
+    echo "  observed phase Failed; aborting wait early"
+    break
+  fi
+  echo "  phase=${phase:-<none>}; waiting ${POLL_INTERVAL}s..."
+  sleep "$POLL_INTERVAL"
+done
+
+if [ "$phase" = "Running" ]; then
+  echo "PASS: DevWorkspace ${DW_NAME} reached Running"
 else
-  echo "PASS: blocked pod could not reach ${BLOCKED_IP} (egress block enforced)"
+  echo "FAIL: DevWorkspace ${DW_NAME} did not reach Running (last phase: ${phase:-<none>})"
+  rc=1
 fi
 
-# Assertion 2: unlabeled pod MUST reach the public control IP (curl exits 0).
-echo "Assertion 2: test-pod-allowed -> http://${CONTROL_IP} (expect reachable)..."
-if $KUBECTL exec -n "$NS" test-pod-allowed -- \
-    curl --max-time 5 "http://${CONTROL_IP}" >/dev/null 2>&1; then
-  echo "PASS: allowed pod reached ${CONTROL_IP} (unrestricted egress works)"
+# --- Assertion 2: exec into the workspace pod ------------------------------------
+echo "Assertion 2: kubectl exec into workspace pod (label ${DW_LABEL})..."
+if [ "$rc" -eq 0 ]; then
+  POD=$($KUBECTL get pods -n "$NS" -l "$DW_LABEL" \
+          -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+  if [ -z "$POD" ]; then
+    echo "FAIL: no pod found for label ${DW_LABEL}"
+    rc=1
+  elif $KUBECTL exec -n "$NS" "$POD" -- echo ok >/dev/null 2>&1; then
+    echo "PASS: exec into ${POD} succeeded"
+  else
+    echo "FAIL: exec into ${POD} failed"
+    rc=1
+  fi
 else
-  echo "FAIL: allowed pod could not reach ${CONTROL_IP} (egress wrongly blocked)"
-  rc=1
+  echo "SKIP: workspace never reached Running"
 fi
 
 if [ "$rc" -eq 0 ]; then
-  echo "R1 VERIFY: PASS"
+  echo "R2 VERIFY: PASS"
 else
-  echo "R1 VERIFY: FAIL"
+  echo "R2 VERIFY: FAIL"
 fi
 exit "$rc"

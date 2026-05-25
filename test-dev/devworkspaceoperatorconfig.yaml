@@ -1,0 +1,14 @@
+# DevWorkspaceOperatorConfig (ADR 0003).
+# Sets the cluster host suffix DWO appends to every workspace endpoint hostname:
+#   <dwo-generated-prefix>.127.0.0.1.nip.io
+# Traffic to *.127.0.0.1.nip.io:80/443 resolves to 127.0.0.1, rides Kind's
+# extraPortMappings (host 80/443 -> node 80/443) onto the ingress-nginx hostPort.
+# CRD storage version in DWO v0.41.0 combined.yaml is v1alpha1.
+apiVersion: controller.devfile.io/v1alpha1
+kind: DevWorkspaceOperatorConfig
+metadata:
+  name: devworkspace-operator-config
+  namespace: devworkspace-controller
+config:
+  routing:
+    clusterHostSuffix: "127.0.0.1.nip.io"
