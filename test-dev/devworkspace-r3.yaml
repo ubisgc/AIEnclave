@@ -1,0 +1,37 @@
+# R3 hardened workspace (ADR 0007): deny wrappers baked into image at /denied-bins,
+# PATH prepended via devfile container env so wrappers shadow any residual binaries.
+# DWO blocks pod-overrides on spec.containers, so ConfigMap volumeMount is not viable;
+# wrappers live in the image. pod-overrides used only for the egress label (metadata).
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: aienclave-r3
+  namespace: aienclave-testuser
+spec:
+  started: true
+  routingClass: basic
+  template:
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            aienclave/egress: restricted
+    components:
+      - name: tooling
+        container:
+          image: kind-registry:5000/aienclave-workspace:r3
+          memoryRequest: 256Mi
+          memoryLimit: 512Mi
+          env:
+            # Prepend /denied-bins so wrappers shadow real binaries on PATH.
+            # Hardcoded because K8s env values do not expand $(PATH).
+            - name: PATH
+              value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            # DWO runs containers as an arbitrary UID with no /etc/passwd entry.
+            # HOME must point to a world-writable dir so copilot can write its cache.
+            - name: HOME
+              value: /home/user
+          command:
+            - tail
+            - "-f"
+            - /dev/null

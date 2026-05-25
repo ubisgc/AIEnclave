@@ -1,0 +1,30 @@
+# R3: shell wrappers for blocked cluster tools (ADR 0007).
+# Mounted read-only at /denied-bins; PATH prepends this dir so wrappers shadow
+# any real binaries the base image ships. Each wrapper exits 1 with a deny
+# message so both interactive shells and agent mode get a clear signal.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: deny-wrappers
+  namespace: aienclave-testuser
+data:
+  kubectl: |
+    #!/bin/sh
+    echo "kubectl: blocked by AIEnclave policy (ADR 0007)" >&2
+    exit 1
+  oc: |
+    #!/bin/sh
+    echo "oc: blocked by AIEnclave policy (ADR 0007)" >&2
+    exit 1
+  helm: |
+    #!/bin/sh
+    echo "helm: blocked by AIEnclave policy (ADR 0007)" >&2
+    exit 1
+  ssh: |
+    #!/bin/sh
+    echo "ssh: blocked by AIEnclave policy (ADR 0007)" >&2
+    exit 1
+  scp: |
+    #!/bin/sh
+    echo "scp: blocked by AIEnclave policy (ADR 0007)" >&2
+    exit 1
