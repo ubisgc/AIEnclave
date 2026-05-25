@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1f2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d1117;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00d4ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7b2fff;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="98" fill="url(#shieldGrad)" stroke="#00d4ff" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Shield body -->
+  <path d="M100 28 L158 52 L158 104 C158 140 130 166 100 178 C70 166 42 140 42 104 L42 52 Z"
+        fill="url(#shieldGrad)" stroke="url(#glowGrad)" stroke-width="2.5" filter="url(#glow)"/>
+
+  <!-- Shield inner border -->
+  <path d="M100 38 L150 59 L150 104 C150 134 126 157 100 167 C74 157 50 134 50 104 L50 59 Z"
+        fill="none" stroke="#00d4ff" stroke-width="0.8" opacity="0.35"/>
+
+  <!-- Circuit node: center -->
+  <circle cx="100" cy="100" r="10" fill="none" stroke="url(#glowGrad)" stroke-width="2" filter="url(#glow)"/>
+  <circle cx="100" cy="100" r="3.5" fill="#00d4ff" filter="url(#glow)"/>
+
+  <!-- Circuit lines from center -->
+  <!-- left -->
+  <line x1="90" y1="100" x2="72" y2="100" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" filter="url(#glow)"/>
+  <!-- right -->
+  <line x1="110" y1="100" x2="128" y2="100" stroke="#7b2fff" stroke-width="1.5" opacity="0.8" filter="url(#glow)"/>
+  <!-- up -->
+  <line x1="100" y1="90" x2="100" y2="72" stroke="#00d4ff" stroke-width="1.5" opacity="0.8" filter="url(#glow)"/>
+  <!-- down -->
+  <line x1="100" y1="110" x2="100" y2="130" stroke="#7b2fff" stroke-width="1.5" opacity="0.8" filter="url(#glow)"/>
+  <!-- up-left diagonal -->
+  <line x1="93" y1="93" x2="78" y2="78" stroke="#00d4ff" stroke-width="1.2" opacity="0.6"/>
+  <!-- up-right diagonal -->
+  <line x1="107" y1="93" x2="122" y2="78" stroke="#7b2fff" stroke-width="1.2" opacity="0.6"/>
+
+  <!-- Satellite nodes -->
+  <!-- left node -->
+  <circle cx="68" cy="100" r="5" fill="none" stroke="#00d4ff" stroke-width="1.8" filter="url(#glow)"/>
+  <circle cx="68" cy="100" r="2" fill="#00d4ff" opacity="0.9"/>
+
+  <!-- right node -->
+  <circle cx="132" cy="100" r="5" fill="none" stroke="#7b2fff" stroke-width="1.8" filter="url(#glow)"/>
+  <circle cx="132" cy="100" r="2" fill="#7b2fff" opacity="0.9"/>
+
+  <!-- top node -->
+  <circle cx="100" cy="68" r="5" fill="none" stroke="#00d4ff" stroke-width="1.8" filter="url(#glow)"/>
+  <circle cx="100" cy="68" r="2" fill="#00d4ff" opacity="0.9"/>
+
+  <!-- bottom node -->
+  <circle cx="100" cy="134" r="5" fill="none" stroke="#7b2fff" stroke-width="1.8" filter="url(#glow)"/>
+  <circle cx="100" cy="134" r="2" fill="#7b2fff" opacity="0.9"/>
+
+  <!-- top-left node -->
+  <circle cx="75" cy="75" r="4" fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.7"/>
+  <circle cx="75" cy="75" r="1.5" fill="#00d4ff" opacity="0.7"/>
+
+  <!-- top-right node -->
+  <circle cx="125" cy="75" r="4" fill="none" stroke="#7b2fff" stroke-width="1.5" opacity="0.7"/>
+  <circle cx="125" cy="75" r="1.5" fill="#7b2fff" opacity="0.7"/>
+
+  <!-- Lock shackle (top of shield, subtle) -->
+  <rect x="85" y="52" width="30" height="18" rx="4"
+        fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.45"/>
+  <path d="M88 62 L88 55 Q100 46 112 55 L112 62"
+        fill="none" stroke="#00d4ff" stroke-width="1.5" opacity="0.45"/>
+
+  <!-- Subtle grid dots in background circle -->
+  <g opacity="0.12" fill="#00d4ff">
+    <circle cx="60" cy="60" r="1.2"/>
+    <circle cx="80" cy="60" r="1.2"/>
+    <circle cx="120" cy="60" r="1.2"/>
+    <circle cx="140" cy="60" r="1.2"/>
+    <circle cx="60" cy="140" r="1.2"/>
+    <circle cx="80" cy="140" r="1.2"/>
+    <circle cx="120" cy="140" r="1.2"/>
+    <circle cx="140" cy="140" r="1.2"/>
+    <circle cx="60" cy="100" r="1.2"/>
+    <circle cx="140" cy="100" r="1.2"/>
+  </g>
+</svg>
