@@ -20,7 +20,7 @@ spec:
           size: 1Gi
       - name: tooling
         container:
-          image: kind-registry:5000/aienclave-workspace:r4
+          image: kind-registry:5000/aienclave-workspace:r5
           memoryRequest: 256Mi
           memoryLimit: 512Mi
           volumeMounts:
