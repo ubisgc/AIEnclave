@@ -1,7 +1,7 @@
 CLUSTER    := aienclave
 KUBECTL    := kubectl --context kind-$(CLUSTER)
 IMAGE_NAME := aienclave-workspace
-IMAGE_TAG  := r3
+IMAGE_TAG  := r5
 REGISTRY   := kind-registry
 # REG_PORT: host-side port for the local registry; cluster-side is always 5000.
 REG_PORT   := 5001
@@ -58,17 +58,25 @@ up:
 	$(KUBECTL) create namespace $(DWO_NS) --dry-run=client -o yaml | $(KUBECTL) apply -f -
 	$(KUBECTL) apply -f $(DWO_URL)
 	$(KUBECTL) rollout status deployment/devworkspace-controller-manager -n $(DWO_NS) --timeout=180s
-	# Wait for DWO webhook TLS cert to be issued before applying any DevWorkspace; without
-	# this the mutating webhook is registered but the serving cert isn't trusted yet,
-	# causing "connection refused" on the first DevWorkspace apply.
+	# Wait for DWO webhook TLS cert AND the webhook server endpoint to be ready.
+	# cert Ready means cert-manager issued the cert, but the webhook pod needs a few
+	# extra seconds to mount it and open the TLS listener — hence the endpoint probe.
 	$(KUBECTL) wait certificate/devworkspace-controller-serving-cert \
 		-n $(DWO_NS) --for=condition=Ready --timeout=60s
+	@echo "Waiting for DWO webhook endpoint to be ready..."; \
+	for i in $$(seq 1 30); do \
+		ip=$$($(KUBECTL) get endpoints devworkspace-webhookserver -n $(DWO_NS) \
+			-o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null); \
+		[ -n "$$ip" ] && echo "  webhook ready at $$ip" && break; \
+		echo "  not ready yet ($$i/30)..."; sleep 2; \
+	done
 	# 5. Operator config — sets the workspace URL host suffix (ADR 0003).
 	$(KUBECTL) apply -f test-dev/devworkspaceoperatorconfig.yaml
-	# 6. R3 hardened workspace — DevWorkspace (ADR 0007).
-	#    Deny wrappers baked into image; DWO blocks pod-overrides on spec.containers.
+	# 6. R5 workspace — egress observation and enforcement. Phase 1: open egress.
+	#    Run scripts/capture-traffic.sh start, then make verify for full flow.
 	$(KUBECTL) create namespace aienclave-testuser --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) apply -f test-dev/devworkspace-r3.yaml
+	$(KUBECTL) apply -f test-dev/netpol-workspace-egress-open.yaml
+	$(KUBECTL) apply -f test-dev/devworkspace-r5.yaml
 
 down:
 	kind delete cluster --name $(CLUSTER)

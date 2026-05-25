@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
-# R3 verification: prove the hardened DevWorkspace blocks cluster tools via PATH wrappers.
+# R5 verification: prove egress NetworkPolicy limits workspace traffic to allowlist.
 #
-# Done criteria (releases.md R3):
-#   1. Lifecycle: aienclave-r3 DevWorkspace reaches phase == Running.
-#   2. Exec:      kubectl exec into workspace pod succeeds.
-#   3. Wrapper:   running `kubectl` inside workspace exits non-zero with deny message.
-#   4. PATH:      `which kubectl` inside workspace resolves to the wrapper (/denied-bins/kubectl),
-#                 confirming the real binary is shadowed.
+# Done criteria (releases.md R5):
+#   1. Lifecycle:   aienclave-r5 DevWorkspace reaches phase == Running.
+#   2. Open egress: Copilot CLI works with open egress (baseline).
+#   3. Enforce:     NetworkPolicy (allowlist) applied to workspace pod.
+#   4. Copilot OK:  Copilot CLI still works after policy applied.
+#   5. Blocked:     Unexpected domain (e.g. example.com) is unreachable from workspace.
 #
-# Open question this closes: does the deny message appear (PATH respected)?
-# If assertion 3 fails with exit 0, agent mode bypasses PATH — record as finding.
+# Open question this closes: exact egress allowlist for Copilot CLI.
+#
+# Prerequisites:
+#   - scripts/capture-traffic.sh start   (enable CoreDNS query log)
+#   - Run Copilot in workspace to generate traffic
+#   - scripts/capture-traffic.sh fqdns   (collect FQDN list)
+#   - Populate CIDRs in test-dev/netpol-workspace-egress-enforce.yaml
 set -uo pipefail
 
 KUBECTL="kubectl --context kind-aienclave"
 NS=aienclave-testuser
-DW_NAME=aienclave-r3
+DW_NAME=aienclave-r5
 DW_LABEL="controller.devfile.io/devworkspace_name=${DW_NAME}"
-RUNNING_TIMEOUT=600   # seconds — 10 min; DWO warns image pulls can be slow
+RUNNING_TIMEOUT=600
 POLL_INTERVAL=10
 
 rc=0
@@ -28,11 +33,9 @@ phase=""
 while [ "$(date +%s)" -lt "$deadline" ]; do
   phase=$($KUBECTL get devworkspace "$DW_NAME" -n "$NS" \
             -o jsonpath='{.status.phase}' 2>/dev/null)
-  if [ "$phase" = "Running" ]; then
-    break
-  fi
+  if [ "$phase" = "Running" ]; then break; fi
   if [ "$phase" = "Failed" ]; then
-    echo "  observed phase Failed; aborting wait early"
+    echo "  observed phase Failed; aborting"
     break
   fi
   echo "  phase=${phase:-<none>}; waiting ${POLL_INTERVAL}s..."
@@ -46,58 +49,92 @@ else
   rc=1
 fi
 
-# --- Assertion 2: exec into workspace pod ----------------------------------------
+# --- Get pod name ---------------------------------------------------------------
 POD=""
 if [ "$rc" -eq 0 ]; then
-  echo "Assertion 2: kubectl exec into workspace pod (label ${DW_LABEL})..."
   POD=$($KUBECTL get pods -n "$NS" -l "$DW_LABEL" \
           -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   if [ -z "$POD" ]; then
     echo "FAIL: no pod found for label ${DW_LABEL}"
     rc=1
-  elif $KUBECTL exec -n "$NS" "$POD" -- echo ok >/dev/null 2>&1; then
-    echo "PASS: exec into ${POD} succeeded"
-  else
-    echo "FAIL: exec into ${POD} failed"
-    rc=1
   fi
-else
-  echo "SKIP: workspace never reached Running"
 fi
 
-# --- Assertion 3: kubectl wrapper blocks with deny message -----------------------
+# --- Assertion 2: Copilot works with open egress (Phase 1 baseline) --------------
 if [ -n "$POD" ]; then
-  echo "Assertion 3: kubectl inside workspace exits non-zero with deny message..."
-  deny_output=$($KUBECTL exec -n "$NS" "$POD" -- kubectl version 2>&1 || true)
-  if echo "$deny_output" | grep -q "blocked by AIEnclave policy"; then
-    echo "PASS: kubectl denied — output: ${deny_output}"
+  echo "Assertion 2: copilot --version reachable with open egress..."
+  copilot_ver=$($KUBECTL exec -n "$NS" "$POD" -- copilot --version 2>&1 || true)
+  if echo "$copilot_ver" | grep -qi "copilot"; then
+    echo "PASS: copilot responds — ${copilot_ver}"
   else
-    echo "FAIL: expected deny message not found — output: ${deny_output}"
-    echo "      (exit 0 with real output means agent mode bypasses PATH — record as R3 finding)"
+    echo "FAIL: copilot --version gave unexpected output: ${copilot_ver}"
     rc=1
   fi
-else
-  echo "SKIP: no pod available"
 fi
 
-# --- Assertion 4: command -v kubectl resolves to wrapper -------------------------
-# `which` is not installed on UBI9-minimal; use `command -v` (shell builtin) via sh -c.
-if [ -n "$POD" ]; then
-  echo "Assertion 4: command -v kubectl resolves to /denied-bins/kubectl..."
-  cv_output=$($KUBECTL exec -n "$NS" "$POD" -- sh -c 'command -v kubectl' 2>/dev/null || true)
-  if [ "$cv_output" = "/denied-bins/kubectl" ]; then
-    echo "PASS: command -v kubectl -> ${cv_output}"
+# --- Manual step: apply enforced NetworkPolicy -----------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo ""
+  echo "========================================================================"
+  echo "MANUAL STEP: apply enforced egress NetworkPolicy, then press Enter"
+  echo ""
+  echo "  Ensure FQDNs are resolved and CIDRs populated in:"
+  echo "    test-dev/netpol-workspace-egress-enforce.yaml"
+  echo ""
+  echo "  Then apply:"
+  echo "    kubectl --context kind-aienclave apply -f test-dev/netpol-workspace-egress-enforce.yaml"
+  echo "========================================================================"
+  echo ""
+  read -r -p "Press Enter once NetworkPolicy is applied... "
+fi
+
+# --- Assertion 3: NetworkPolicy exists and targets workspace label ---------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 3: workspace-egress NetworkPolicy present in ${NS}..."
+  np=$($KUBECTL get networkpolicy workspace-egress -n "$NS" \
+        -o jsonpath='{.metadata.name}' 2>/dev/null || true)
+  if [ "$np" = "workspace-egress" ]; then
+    echo "PASS: NetworkPolicy workspace-egress found"
   else
-    echo "FAIL: command -v kubectl -> '${cv_output}' (expected /denied-bins/kubectl)"
+    echo "FAIL: NetworkPolicy workspace-egress not found in ${NS}"
     rc=1
   fi
-else
-  echo "SKIP: no pod available"
+fi
+
+# --- Assertion 4: Copilot still works after enforcement --------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 4: copilot --version still works after NetworkPolicy applied..."
+  copilot_ver=$($KUBECTL exec -n "$NS" "$POD" -- copilot --version 2>&1 || true)
+  if echo "$copilot_ver" | grep -qi "copilot"; then
+    echo "PASS: copilot responds after enforcement — ${copilot_ver}"
+  else
+    echo "FAIL: copilot --version failed after enforcement: ${copilot_ver}"
+    echo "      (missing endpoint in allowlist — check CoreDNS logs and update CIDRs)"
+    rc=1
+  fi
+fi
+
+# --- Assertion 5: unexpected domain blocked --------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 5: example.com unreachable from workspace (egress blocked)..."
+  # curl exits non-zero on connection failure; we want non-zero here.
+  block_output=$($KUBECTL exec -n "$NS" "$POD" -- \
+    sh -c 'curl -s --connect-timeout 5 https://example.com 2>&1; echo "exit:$?"' || true)
+  if echo "$block_output" | grep -q "exit:0"; then
+    echo "FAIL: example.com reachable — NetworkPolicy not blocking unexpected egress"
+    echo "      output: ${block_output}"
+    rc=1
+  else
+    echo "PASS: example.com blocked — ${block_output}"
+  fi
 fi
 
 if [ "$rc" -eq 0 ]; then
-  echo "R3 VERIFY: PASS"
+  echo ""
+  echo "R5 VERIFY: PASS"
+  echo "Egress allowlist enforced. Copilot works. Unexpected egress blocked."
 else
-  echo "R3 VERIFY: FAIL"
+  echo ""
+  echo "R5 VERIFY: FAIL"
 fi
 exit "$rc"

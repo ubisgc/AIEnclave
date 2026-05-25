@@ -1,0 +1,37 @@
+# R5 workspace: identical to R4 — PVC home dir, hardened image, egress label.
+# Egress label "aienclave/egress: restricted" is the selector for the R5 NetworkPolicy.
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: aienclave-r5
+  namespace: aienclave-testuser
+spec:
+  started: true
+  routingClass: basic
+  template:
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            aienclave/egress: restricted
+    components:
+      - name: home-pvc
+        volume:
+          size: 1Gi
+      - name: tooling
+        container:
+          image: kind-registry:5000/aienclave-workspace:r5
+          memoryRequest: 256Mi
+          memoryLimit: 512Mi
+          volumeMounts:
+            - name: home-pvc
+              path: /home/user
+          env:
+            - name: PATH
+              value: /denied-bins:/opt/skills/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: HOME
+              value: /home/user
+          command:
+            - tail
+            - "-f"
+            - /dev/null
