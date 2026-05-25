@@ -78,8 +78,10 @@ case "$cmd" in
     echo ""
     $KUBECTL -n kube-system logs -l k8s-app=kube-dns --tail=-1 2>/dev/null \
       | grep "$IP" \
-      | grep -oP '(?<=\] )[^ ]+(?= \w+ IN)' \
+      | grep -oP '(?<= IN )\S+(?=\. (?:udp|tcp))' \
       | sed 's/\.$//' \
+      | grep -v 'cluster\.local$\|\.svc\.' \
+      | grep -v '\.home$' \
       | sort -u
     echo ""
     echo "Resolve each FQDN to CIDR and add to test-dev/netpol-workspace-egress-enforce.yaml."
