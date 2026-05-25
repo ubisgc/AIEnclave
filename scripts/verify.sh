@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-# R2 verification: prove the DevWorkspace lifecycle works on Kind + Calico + DWO.
+# R3 verification: prove the hardened DevWorkspace blocks cluster tools via PATH wrappers.
 #
-# Two done-criteria, nothing about browser/IDE (ADR 0003/0006 — R2 is lifecycle-only):
-#   1. Lifecycle: the blank DevWorkspace reaches phase == Running.
-#   2. Exec:      kubectl exec into the workspace pod runs `echo` with exit 0.
+# Done criteria (releases.md R3):
+#   1. Lifecycle: aienclave-r3 DevWorkspace reaches phase == Running.
+#   2. Exec:      kubectl exec into workspace pod succeeds.
+#   3. Wrapper:   running `kubectl` inside workspace exits non-zero with deny message.
+#   4. PATH:      `which kubectl` inside workspace resolves to the wrapper (/denied-bins/kubectl),
+#                 confirming the real binary is shadowed.
 #
-# DWO's own docs warn workspace image pulls can exceed 5 min; assertion 1 uses a
-# generous 10-minute timeout and FAILs on timeout.
+# Open question this closes: does the deny message appear (PATH respected)?
+# If assertion 3 fails with exit 0, agent mode bypasses PATH — record as finding.
 set -uo pipefail
 
 KUBECTL="kubectl --context kind-aienclave"
 NS=aienclave-testuser
-DW_NAME=aienclave-blank
+DW_NAME=aienclave-r3
 DW_LABEL="controller.devfile.io/devworkspace_name=${DW_NAME}"
 RUNNING_TIMEOUT=600   # seconds — 10 min; DWO warns image pulls can be slow
 POLL_INTERVAL=10
@@ -43,9 +46,10 @@ else
   rc=1
 fi
 
-# --- Assertion 2: exec into the workspace pod ------------------------------------
-echo "Assertion 2: kubectl exec into workspace pod (label ${DW_LABEL})..."
+# --- Assertion 2: exec into workspace pod ----------------------------------------
+POD=""
 if [ "$rc" -eq 0 ]; then
+  echo "Assertion 2: kubectl exec into workspace pod (label ${DW_LABEL})..."
   POD=$($KUBECTL get pods -n "$NS" -l "$DW_LABEL" \
           -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   if [ -z "$POD" ]; then
@@ -61,9 +65,38 @@ else
   echo "SKIP: workspace never reached Running"
 fi
 
-if [ "$rc" -eq 0 ]; then
-  echo "R2 VERIFY: PASS"
+# --- Assertion 3: kubectl wrapper blocks with deny message -----------------------
+if [ -n "$POD" ]; then
+  echo "Assertion 3: kubectl inside workspace exits non-zero with deny message..."
+  deny_output=$($KUBECTL exec -n "$NS" "$POD" -- kubectl version 2>&1 || true)
+  if echo "$deny_output" | grep -q "blocked by AIEnclave policy"; then
+    echo "PASS: kubectl denied — output: ${deny_output}"
+  else
+    echo "FAIL: expected deny message not found — output: ${deny_output}"
+    echo "      (exit 0 with real output means agent mode bypasses PATH — record as R3 finding)"
+    rc=1
+  fi
 else
-  echo "R2 VERIFY: FAIL"
+  echo "SKIP: no pod available"
+fi
+
+# --- Assertion 4: which kubectl resolves to wrapper ------------------------------
+if [ -n "$POD" ]; then
+  echo "Assertion 4: which kubectl resolves to /denied-bins/kubectl..."
+  which_output=$($KUBECTL exec -n "$NS" "$POD" -- which kubectl 2>/dev/null || true)
+  if [ "$which_output" = "/denied-bins/kubectl" ]; then
+    echo "PASS: which kubectl -> ${which_output}"
+  else
+    echo "FAIL: which kubectl -> '${which_output}' (expected /denied-bins/kubectl)"
+    rc=1
+  fi
+else
+  echo "SKIP: no pod available"
+fi
+
+if [ "$rc" -eq 0 ]; then
+  echo "R3 VERIFY: PASS"
+else
+  echo "R3 VERIFY: FAIL"
 fi
 exit "$rc"

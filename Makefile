@@ -1,5 +1,7 @@
-CLUSTER := aienclave
-KUBECTL  := kubectl --context kind-$(CLUSTER)
+CLUSTER    := aienclave
+KUBECTL    := kubectl --context kind-$(CLUSTER)
+IMAGE_NAME := aienclave-workspace
+IMAGE_TAG  := r3
 
 # Pinned upstream manifests — applied from URL, never vendored (ADR 0001 style).
 CALICO_URL  := https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml
@@ -9,14 +11,20 @@ DWO_URL     := https://raw.githubusercontent.com/devfile/devworkspace-operator/v
 
 DWO_NS := devworkspace-controller
 
-.PHONY: up down verify
+.PHONY: up down verify image
+
+image:
+	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) images/workspace/
 
 up:
 	@command -v kind kubectl docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 || \
 		{ echo "preflight failed: need kind, kubectl, docker on PATH and a running Docker daemon"; exit 1; }
 	@kind get clusters 2>/dev/null | grep -qx "$(CLUSTER)" && \
 		{ echo "cluster $(CLUSTER) already exists; run 'make down' first"; exit 1; } || true
+	# 0. Build workspace image locally then load into Kind (no registry needed).
+	$(MAKE) image
 	kind create cluster --name $(CLUSTER) --config kind/kind-config.yaml
+	kind load docker-image $(IMAGE_NAME):$(IMAGE_TAG) --name $(CLUSTER)
 	# 1. CNI — Calico (ADR 0001); enforces NetworkPolicy, keeps pod IPs out of 10.0.0.0/8.
 	$(KUBECTL) apply -f $(CALICO_URL)
 	$(KUBECTL) rollout status daemonset/calico-node -n kube-system --timeout=120s
@@ -38,10 +46,11 @@ up:
 	$(KUBECTL) rollout status deployment/devworkspace-controller-manager -n $(DWO_NS) --timeout=180s
 	# 5. Operator config — sets the workspace URL host suffix (ADR 0003).
 	$(KUBECTL) apply -f test-dev/devworkspaceoperatorconfig.yaml
-	# 6. Blank Workspace — the R2 lifecycle subject (ADR 0006).
-	#    Workspace lives in a per-user namespace (aienclave-testuser is the hardcoded test stand-in).
+	# 6. R3 hardened workspace — deny-wrappers ConfigMap + DevWorkspace (ADR 0007).
+	#    ConfigMap must land before DevWorkspace so the volume mount resolves on pod start.
 	$(KUBECTL) create namespace aienclave-testuser --dry-run=client -o yaml | $(KUBECTL) apply -f -
-	$(KUBECTL) apply -f test-dev/devworkspace-blank.yaml
+	$(KUBECTL) apply -f test-dev/deny-wrappers-cm.yaml
+	$(KUBECTL) apply -f test-dev/devworkspace-r3.yaml
 
 down:
 	kind delete cluster --name $(CLUSTER)

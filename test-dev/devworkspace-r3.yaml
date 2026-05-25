@@ -1,0 +1,48 @@
+# R3 hardened workspace (ADR 0007): deny-wrappers ConfigMap mounted at /denied-bins,
+# PATH prepended so wrappers shadow any cluster tools the base image ships.
+# pod-overrides strategic-merge-patches the DWO-generated PodTemplateSpec to add
+# the ConfigMap volume and attach the mount to the DWO-named container ("tooling").
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: aienclave-r3
+  namespace: aienclave-testuser
+spec:
+  started: true
+  routingClass: basic
+  template:
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            aienclave/egress: restricted
+        spec:
+          # Add the ConfigMap volume; strategic merge appends (does not replace) existing volumes.
+          volumes:
+            - name: deny-wrappers
+              configMap:
+                name: deny-wrappers
+                defaultMode: 0755
+          # Merge by container name "tooling" (matches the component below) to add the mount.
+          # imagePullPolicy: Never — image loaded into Kind via `kind load docker-image`, no registry.
+          containers:
+            - name: tooling
+              imagePullPolicy: Never
+              volumeMounts:
+                - name: deny-wrappers
+                  mountPath: /denied-bins
+    components:
+      - name: tooling
+        container:
+          image: aienclave-workspace:r3
+          memoryRequest: 256Mi
+          memoryLimit: 512Mi
+          env:
+            # Prepend /denied-bins so wrappers shadow real binaries on PATH.
+            # Hardcoded because K8s env values do not expand $(PATH).
+            - name: PATH
+              value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          command:
+            - tail
+            - "-f"
+            - /dev/null
