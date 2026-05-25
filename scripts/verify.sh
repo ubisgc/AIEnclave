@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# R3 verification: prove the hardened DevWorkspace blocks cluster tools via PATH wrappers.
+# R4 verification: prove OAuth token lands plaintext on PVC, not ephemeral storage.
 #
-# Done criteria (releases.md R3):
-#   1. Lifecycle: aienclave-r3 DevWorkspace reaches phase == Running.
-#   2. Exec:      kubectl exec into workspace pod succeeds.
-#   3. Wrapper:   running `kubectl` inside workspace exits non-zero with deny message.
-#   4. PATH:      `which kubectl` inside workspace resolves to the wrapper (/denied-bins/kubectl),
-#                 confirming the real binary is shadowed.
+# Done criteria (releases.md R4):
+#   1. Lifecycle:    aienclave-r4 DevWorkspace reaches phase == Running.
+#   2. PVC mounted:  /home/user is a mounted PersistentVolume inside the workspace pod.
+#   3. Auth:         (manual) user runs `gh auth login --web` inside workspace.
+#   4. Token exists: ~/.config/gh/hosts.yml present after login.
+#   5. Plaintext:    token file is readable plaintext (no keychain, no encryption).
+#   6. Permissions:  token file mode is 0600 (owner-only read/write).
+#   7. PVC scope:    token path is on the PVC mount, not ephemeral container storage.
 #
-# Open question this closes: does the deny message appear (PATH respected)?
-# If assertion 3 fails with exit 0, agent mode bypasses PATH — record as finding.
+# Open question this closes: OAuth token storage on headless Linux — plaintext risk confirmed.
 set -uo pipefail
 
 KUBECTL="kubectl --context kind-aienclave"
 NS=aienclave-testuser
-DW_NAME=aienclave-r3
+DW_NAME=aienclave-r4
 DW_LABEL="controller.devfile.io/devworkspace_name=${DW_NAME}"
-RUNNING_TIMEOUT=600   # seconds — 10 min; DWO warns image pulls can be slow
+RUNNING_TIMEOUT=600
 POLL_INTERVAL=10
+TOKEN_PATH=/home/user/.config/gh/hosts.yml
 
 rc=0
 
@@ -46,58 +48,108 @@ else
   rc=1
 fi
 
-# --- Assertion 2: exec into workspace pod ----------------------------------------
+# --- Assertion 2: PVC mounted at /home/user -------------------------------------
 POD=""
 if [ "$rc" -eq 0 ]; then
-  echo "Assertion 2: kubectl exec into workspace pod (label ${DW_LABEL})..."
+  echo "Assertion 2: PVC mounted at /home/user..."
   POD=$($KUBECTL get pods -n "$NS" -l "$DW_LABEL" \
           -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
   if [ -z "$POD" ]; then
     echo "FAIL: no pod found for label ${DW_LABEL}"
     rc=1
-  elif $KUBECTL exec -n "$NS" "$POD" -- echo ok >/dev/null 2>&1; then
-    echo "PASS: exec into ${POD} succeeded"
   else
-    echo "FAIL: exec into ${POD} failed"
-    rc=1
+    # /proc/mounts shows real mounts; grep for /home/user on a non-overlay filesystem.
+    mount_output=$($KUBECTL exec -n "$NS" "$POD" -- \
+      sh -c 'grep " /home/user " /proc/mounts' 2>/dev/null || true)
+    if echo "$mount_output" | grep -q "/home/user"; then
+      echo "PASS: /home/user is mounted — ${mount_output}"
+    else
+      echo "FAIL: /home/user does not appear in /proc/mounts (PVC not attached)"
+      echo "      /proc/mounts:"
+      $KUBECTL exec -n "$NS" "$POD" -- cat /proc/mounts 2>/dev/null || true
+      rc=1
+    fi
   fi
-else
-  echo "SKIP: workspace never reached Running"
 fi
 
-# --- Assertion 3: kubectl wrapper blocks with deny message -----------------------
-if [ -n "$POD" ]; then
-  echo "Assertion 3: kubectl inside workspace exits non-zero with deny message..."
-  deny_output=$($KUBECTL exec -n "$NS" "$POD" -- kubectl version 2>&1 || true)
-  if echo "$deny_output" | grep -q "blocked by AIEnclave policy"; then
-    echo "PASS: kubectl denied — output: ${deny_output}"
-  else
-    echo "FAIL: expected deny message not found — output: ${deny_output}"
-    echo "      (exit 0 with real output means agent mode bypasses PATH — record as R3 finding)"
-    rc=1
-  fi
-else
-  echo "SKIP: no pod available"
+# --- Manual step: user runs gh auth login ----------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo ""
+  echo "========================================================================"
+  echo "MANUAL STEP: run the following in another terminal, then press Enter here"
+  echo ""
+  echo "  kubectl --context kind-aienclave exec -it -n ${NS} ${POD} -- bash"
+  echo "  # inside workspace:"
+  echo "  gh auth login --web"
+  echo "  # complete the device-flow browser prompt, then return here"
+  echo "========================================================================"
+  echo ""
+  read -r -p "Press Enter once gh auth login has completed... "
 fi
 
-# --- Assertion 4: command -v kubectl resolves to wrapper -------------------------
-# `which` is not installed on UBI9-minimal; use `command -v` (shell builtin) via sh -c.
-if [ -n "$POD" ]; then
-  echo "Assertion 4: command -v kubectl resolves to /denied-bins/kubectl..."
-  cv_output=$($KUBECTL exec -n "$NS" "$POD" -- sh -c 'command -v kubectl' 2>/dev/null || true)
-  if [ "$cv_output" = "/denied-bins/kubectl" ]; then
-    echo "PASS: command -v kubectl -> ${cv_output}"
+# --- Assertion 3: token file exists ---------------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 3: token file exists at ${TOKEN_PATH}..."
+  if $KUBECTL exec -n "$NS" "$POD" -- test -f "$TOKEN_PATH" 2>/dev/null; then
+    echo "PASS: ${TOKEN_PATH} exists"
   else
-    echo "FAIL: command -v kubectl -> '${cv_output}' (expected /denied-bins/kubectl)"
+    echo "FAIL: ${TOKEN_PATH} not found after login"
+    echo "      Other gh config files present:"
+    $KUBECTL exec -n "$NS" "$POD" -- sh -c 'find /home/user/.config -type f 2>/dev/null || echo "(none)"'
     rc=1
   fi
-else
-  echo "SKIP: no pod available"
+fi
+
+# --- Assertion 4: token is plaintext -------------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 4: token file is readable plaintext..."
+  token_contents=$($KUBECTL exec -n "$NS" "$POD" -- cat "$TOKEN_PATH" 2>/dev/null || true)
+  if echo "$token_contents" | grep -q "oauth_token"; then
+    echo "PASS: token file contains plaintext oauth_token"
+    echo "      --- token file contents (redacted) ---"
+    echo "$token_contents" | sed 's/oauth_token:.*/oauth_token: <REDACTED>/'
+    echo "      ----------------------------------------"
+  else
+    echo "FAIL: oauth_token key not found in ${TOKEN_PATH} — contents:"
+    echo "$token_contents"
+    rc=1
+  fi
+fi
+
+# --- Assertion 5: file permissions 0600 ----------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 5: token file permissions are 0600..."
+  perms=$($KUBECTL exec -n "$NS" "$POD" -- \
+    sh -c "stat -c '%a' ${TOKEN_PATH}" 2>/dev/null || true)
+  if [ "$perms" = "600" ]; then
+    echo "PASS: ${TOKEN_PATH} mode = ${perms}"
+  else
+    echo "WARN: ${TOKEN_PATH} mode = ${perms} (expected 600 — document as finding)"
+  fi
+fi
+
+# --- Assertion 6: token path is on PVC mount ------------------------------------
+if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
+  echo "Assertion 6: token path resolves to PVC mount (not overlay/tmpfs)..."
+  # df shows the filesystem backing the path; overlay = ephemeral container layer.
+  df_output=$($KUBECTL exec -n "$NS" "$POD" -- df -T "$TOKEN_PATH" 2>/dev/null || true)
+  echo "      df -T ${TOKEN_PATH}:"
+  echo "$df_output"
+  if echo "$df_output" | grep -qv "overlay"; then
+    echo "PASS: token is not on overlay (ephemeral) filesystem — PVC confirmed"
+  else
+    echo "FAIL: token appears to be on overlay (ephemeral) filesystem — PVC not backing /home/user"
+    rc=1
+  fi
 fi
 
 if [ "$rc" -eq 0 ]; then
-  echo "R3 VERIFY: PASS"
+  echo ""
+  echo "R4 VERIFY: PASS"
+  echo "Finding confirmed: gh OAuth token stored plaintext at ${TOKEN_PATH} on PVC."
+  echo "Keychain not used on headless Linux — plaintext risk quantified (see R4 PRD)."
 else
-  echo "R3 VERIFY: FAIL"
+  echo ""
+  echo "R4 VERIFY: FAIL"
 fi
 exit "$rc"

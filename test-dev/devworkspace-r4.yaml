@@ -1,0 +1,42 @@
+# R4 workspace: adds persistent PVC for home dir so OAuth token survives pod restarts.
+# Goal: confirm gh auth token lands at ~/.config/gh/hosts.yml (plaintext, no keychain)
+# and is scoped to the PVC — not ephemeral container storage.
+apiVersion: workspace.devfile.io/v1alpha2
+kind: DevWorkspace
+metadata:
+  name: aienclave-r4
+  namespace: aienclave-testuser
+spec:
+  started: true
+  routingClass: basic
+  template:
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            aienclave/egress: restricted
+    components:
+      - name: home-pvc
+        volume:
+          size: 1Gi
+      - name: tooling
+        container:
+          image: kind-registry:5000/aienclave-workspace:r4
+          memoryRequest: 256Mi
+          memoryLimit: 512Mi
+          volumeMounts:
+            - name: home-pvc
+              path: /home/user
+          env:
+            - name: PATH
+              value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+            - name: HOME
+              value: /home/user
+            # Extension binary baked into image at /opt/gh-data/gh/extensions/; PVC mounts at
+            # /home/user so extension dir must be outside home to avoid being shadowed at runtime.
+            - name: XDG_DATA_HOME
+              value: /opt/gh-data
+          command:
+            - tail
+            - "-f"
+            - /dev/null

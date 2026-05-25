@@ -1,4 +1,4 @@
-# AIEnclave workspace image — R3+
+# AIEnclave workspace image — R4
 #
 # UBI9-minimal base for OpenShift R6 portability (ADR 0008 TBD).
 # Installs gh CLI + gh-copilot. Intentionally omits cluster tools
@@ -24,10 +24,18 @@ RUN curl -fsSL \
         "gh_${GH_VERSION}_linux_amd64/bin/gh" \
     && chmod +x /usr/local/bin/gh
 
-# gh copilot extension — installer script avoids gh auth requirement at build time.
+# gh copilot extension — install to /opt/gh-data (outside /home/user) so the PVC mount at
+# /home/user at runtime does not shadow the baked-in extension binary. gh 2.x reads
+# XDG_DATA_HOME for the data dir (extensions live at {XDG_DATA_HOME}/gh/extensions/).
+# Set the same XDG_DATA_HOME in the DevWorkspace spec so the runtime gh finds the extension.
 # Pin to a specific release before R6 (currently unpinned: acceptable for Kind dev loop).
-ENV HOME=/root
-RUN curl -fsSL https://gh.io/copilot-install | bash
+ENV HOME=/root XDG_DATA_HOME=/opt/gh-data
+RUN curl -fsSL https://gh.io/copilot-install | bash && chmod -R a+rX /opt/gh-data
+
+# World-writable home for the arbitrary UID DWO assigns at runtime (no /etc/passwd entry).
+# Separate from extension data dir — PVC mounts here; extension stays in /opt/gh-data.
+RUN mkdir -p /home/user && chmod 777 /home/user
+ENV HOME=/home/user
 
 # Deny wrappers baked in at /denied-bins (ADR 0007 layer 3).
 # DWO blocks pod-overrides on spec.containers so ConfigMap mount is not viable;
@@ -38,8 +46,5 @@ RUN mkdir -p /denied-bins && \
             "$tool" > /denied-bins/$tool && \
         chmod +x /denied-bins/$tool; \
     done
-
-# World-writable home for the arbitrary UID DWO assigns at runtime (no /etc/passwd entry).
-RUN mkdir -p /home/user && chmod 777 /home/user
 
 WORKDIR /home/user
