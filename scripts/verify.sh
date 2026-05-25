@@ -5,7 +5,7 @@
 #   1. Lifecycle:    aienclave-r4 DevWorkspace reaches phase == Running.
 #   2. PVC mounted:  /home/user is a mounted PersistentVolume inside the workspace pod.
 #   3. Auth:         (manual) user runs `gh auth login --web` inside workspace.
-#   4. Token exists: ~/.config/gh/hosts.yml present after login.
+#   4. Token exists: ~/.copilot/config.json present after login.
 #   5. Plaintext:    token file is readable plaintext (no keychain, no encryption).
 #   6. Permissions:  token file mode is 0600 (owner-only read/write).
 #   7. PVC scope:    token path is on the PVC mount, not ephemeral container storage.
@@ -19,7 +19,7 @@ DW_NAME=aienclave-r4
 DW_LABEL="controller.devfile.io/devworkspace_name=${DW_NAME}"
 RUNNING_TIMEOUT=600
 POLL_INTERVAL=10
-TOKEN_PATH=/home/user/.config/gh/hosts.yml
+TOKEN_PATH=/home/user/.copilot/config.json
 
 rc=0
 
@@ -80,7 +80,7 @@ if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
   echo ""
   echo "  kubectl --context kind-aienclave exec -it -n ${NS} ${POD} -- bash"
   echo "  # inside workspace:"
-  echo "  gh auth login --web"
+  echo "  copilot auth"
   echo "  # complete the device-flow browser prompt, then return here"
   echo "========================================================================"
   echo ""
@@ -104,13 +104,13 @@ fi
 if [ -n "$POD" ] && [ "$rc" -eq 0 ]; then
   echo "Assertion 4: token file is readable plaintext..."
   token_contents=$($KUBECTL exec -n "$NS" "$POD" -- cat "$TOKEN_PATH" 2>/dev/null || true)
-  if echo "$token_contents" | grep -q "oauth_token"; then
-    echo "PASS: token file contains plaintext oauth_token"
+  if echo "$token_contents" | grep -qi "token"; then
+    echo "PASS: token file contains plaintext token"
     echo "      --- token file contents (redacted) ---"
-    echo "$token_contents" | sed 's/oauth_token:.*/oauth_token: <REDACTED>/'
+    echo "$token_contents" | sed 's/"token"[[:space:]]*:[[:space:]]*"[^"]*"/"token": "<REDACTED>"/'
     echo "      ----------------------------------------"
   else
-    echo "FAIL: oauth_token key not found in ${TOKEN_PATH} — contents:"
+    echo "FAIL: token key not found in ${TOKEN_PATH} — contents:"
     echo "$token_contents"
     rc=1
   fi
@@ -146,7 +146,7 @@ fi
 if [ "$rc" -eq 0 ]; then
   echo ""
   echo "R4 VERIFY: PASS"
-  echo "Finding confirmed: gh OAuth token stored plaintext at ${TOKEN_PATH} on PVC."
+  echo "Finding confirmed: copilot OAuth token stored plaintext at ${TOKEN_PATH} on PVC."
   echo "Keychain not used on headless Linux — plaintext risk quantified (see R4 PRD)."
 else
   echo ""

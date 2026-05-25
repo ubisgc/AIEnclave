@@ -32,10 +32,6 @@ spec:
               value: /denied-bins:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             - name: HOME
               value: /home/user
-            # Extension binary baked into image at /opt/gh-data/gh/extensions/; PVC mounts at
-            # /home/user so extension dir must be outside home to avoid being shadowed at runtime.
-            - name: XDG_DATA_HOME
-              value: /opt/gh-data
           command:
             - tail
             - "-f"
